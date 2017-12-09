@@ -6,6 +6,12 @@ import (
     "strconv"
     "log"
     "net/url"
+    "io/ioutil"
+    "os/exec"
+    "time"
+    "io"
+    "os"
+    "bytes"
 )
 
 type Submission struct{
@@ -14,6 +20,12 @@ type Submission struct{
     code string
     lang int
     result string
+}
+
+func check(e error) {
+    if e != nil {
+        panic(e)
+    }
 }
 
 func main() {
@@ -31,12 +43,81 @@ func Judger(src chan Submission, dist chan Submission){
     for{
         select{
         case s := <-src:
+            fileName := "code/"
+            fileName += s.uuid
+            if s.lang == 0 {
+                fileName += ".c"
+            }else{
+                fileName += ".cpp"
+            }
+            err := ioutil.WriteFile(fileName, []byte(s.code), 0644)
+            check(err)
+            log.Printf("[%s] File wrote\n", s.uuid[:7])
+            log.Printf("[%s] Compiling...\n", s.uuid[:7])
+            if s.lang == 0 {
+                compiler := exec.Command("gcc", "-O2", "-std=c11", "-static", fileName, "-o", "code/"+s.uuid)
+                err := compiler.Run()
+                if err != nil {
+                    s.result = "CE"
+                    dist <- s
+                    continue
+                }
+            }else{
+                compiler := exec.Command("g++", "-O2", "-std=c++11", "-static", fileName, "-o", "code/"+s.uuid)
+                err := compiler.Run()
+                if err != nil {
+                    s.result = "CE"
+                    dist <- s
+                    continue
+                }
+            }
             log.Printf("[%s] Judging...\n",s.uuid[:7])
-            s.result = "AC"
-            log.Printf("[%s] Result: %s\n", s.uuid[:7], s.result)
-            dist <- s
+            done := make(chan string)
+            cpid := make(chan int)
+            go JudgeThread(done, cpid, s)
+            pid := <-cpid
+            log.Printf("[%s] PID: %d\n",s.uuid[:7], pid)
+            timer1 := time.NewTimer(time.Second * 5)
+            select{
+            case result := <-done:
+                s.result = result
+                dist <- s
+            case <-timer1.C:
+                s.result="TLE"
+                proc, err := os.FindProcess(pid)
+                check(err)
+                err = proc.Kill()
+                check(err)
+                log.Printf("[%s] Killed %d\n",s.uuid[:7], pid)
+                dist <- s
+            }
         }
 
+    }
+}
+
+func JudgeThread(done chan string, pid chan int, s Submission){
+    cmd := exec.Command("code/"+s.uuid)
+    stdin, err := cmd.StdinPipe()
+    check(err)
+    defer stdin.Close()
+    in_buf, err := ioutil.ReadFile(fmt.Sprintf("code/p%d.in", s.qid))
+    check(err)
+    stdout, err := cmd.StdoutPipe()
+    check(err)
+    defer stdout.Close()
+    ac_buf, err := ioutil.ReadFile(fmt.Sprintf("code/p%d.out", s.qid))
+    check(err)
+    err = cmd.Start()
+    check(err)
+    pid <- cmd.Process.Pid
+    io.WriteString(stdin, string(in_buf))
+    outBytes, err := ioutil.ReadAll(stdout)
+    check(err)
+    if bytes.Equal(outBytes, ac_buf) {
+        done <- "AC"
+    }else{
+        done <- "WA"
     }
 }
 
@@ -44,6 +125,7 @@ func Emmiter(src chan Submission){
     for{
         select{
         case s:= <-src:
+            log.Printf("[%s] Result: %s\n", s.uuid[:7], s.result)
             resp, _ := http.PostForm(fmt.Sprintf("http://0.0.0.0:3000/judge/%s/update",s.uuid),url.Values{"result": {s.result}})
             log.Printf("[%s] Emmited: %s\n", s.uuid[:7], resp.Status)
         }
