@@ -91,6 +91,7 @@ func Judger(src chan Submission, dist chan Submission){
                 log.Printf("[%s] Killed %d\n",s.uuid[:7], pid)
                 dist <- s
             }
+            os.Remove("code/"+s.uuid)
         }
 
     }
@@ -109,7 +110,10 @@ func JudgeThread(done chan string, pid chan int, s Submission){
     ac_buf, err := ioutil.ReadFile(fmt.Sprintf("code/p%d.out", s.qid))
     check(err)
     err = cmd.Start()
-    check(err)
+    if err!=nil {
+        done <- "RE"
+        return
+    }
     pid <- cmd.Process.Pid
     io.WriteString(stdin, string(in_buf))
     outBytes, err := ioutil.ReadAll(stdout)
