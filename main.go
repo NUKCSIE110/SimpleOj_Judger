@@ -11,7 +11,7 @@ import (
     "time"
     "io"
     "os"
-    "bytes"
+    "crypto/md5"
 )
 
 type Submission struct{
@@ -101,7 +101,6 @@ func JudgeThread(done chan string, pid chan int, s Submission){
     cmd := exec.Command("code/"+s.uuid)
     stdin, err := cmd.StdinPipe()
     check(err)
-    defer stdin.Close()
     in_buf, err := ioutil.ReadFile(fmt.Sprintf("code/p%d.in", s.qid))
     check(err)
     stdout, err := cmd.StdoutPipe()
@@ -115,10 +114,13 @@ func JudgeThread(done chan string, pid chan int, s Submission){
         return
     }
     pid <- cmd.Process.Pid
-    io.WriteString(stdin, string(in_buf))
+    go func(){
+        defer stdin.Close()
+        io.WriteString(stdin, string(in_buf))
+    }()
     outBytes, err := ioutil.ReadAll(stdout)
     check(err)
-    if bytes.Equal(outBytes, ac_buf) {
+    if md5.Sum(outBytes)==md5.Sum(ac_buf) {
         done <- "AC"
     }else{
         done <- "WA"
