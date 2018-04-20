@@ -3,6 +3,7 @@ package main
 import (
 	"crypto/md5"
 	"fmt"
+	"flag"
 	"io"
 	"io/ioutil"
 	"log"
@@ -28,6 +29,14 @@ func check(e error) {
 	}
 }
 
+var baseDir *string
+
+func init() {
+	baseDir = flag.String("d", ".", "Base directory")
+	flag.Parse();
+	log.Printf("Workdir: %s\n", *baseDir);
+}
+
 func main() {
 	readyQueue := make(chan Submission)
 	judgedQueue := make(chan Submission)
@@ -42,7 +51,7 @@ func main() {
 func Judger(src chan Submission, dist chan Submission) {
 	for {
 		s := <-src
-		fileName := "code/" + s.uuid
+		fileName := *baseDir + "/code/" + s.uuid
 		var compilerName string
 		var standard string
 		if s.lang == 0 {
@@ -93,15 +102,15 @@ func Judger(src chan Submission, dist chan Submission) {
 }
 
 func JudgeThread(done chan string, pid chan int, s Submission) {
-	cmd := exec.Command("code/" + s.uuid)
+	cmd := exec.Command(*baseDir + "/code/" + s.uuid)
 	stdin, err := cmd.StdinPipe()
 	check(err)
-	in_buf, err := ioutil.ReadFile(fmt.Sprintf("testData/p%d.in", s.qid))
+	in_buf, err := ioutil.ReadFile(fmt.Sprintf("%s/testData/p%d.in", *baseDir, s.qid))
 	check(err)
 	stdout, err := cmd.StdoutPipe()
 	check(err)
 	defer stdout.Close()
-	ac_buf, err := ioutil.ReadFile(fmt.Sprintf("testData/p%d.out", s.qid))
+	ac_buf, err := ioutil.ReadFile(fmt.Sprintf("%s/testData/p%d.out", *baseDir, s.qid))
 	check(err)
 	err = cmd.Start()
 	if err != nil {
